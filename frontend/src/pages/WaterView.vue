@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
+import { useReviewStore } from '../stores/reviewStore';
+import ReviewBadge from '../components/common/ReviewBadge.vue';
 import { CHANGE_TRENDS, INFLOW_TYPES, isSurge, type ChangeTrend, type InflowType, type WaterInflow, type WaterInflowDraft } from '../types/water';
 import { waterMeasure } from '../types/grade';
 import { formatChainage, parseChainage } from '../utils/geoMath';
@@ -12,6 +14,7 @@ const route = useRoute();
 const router = useRouter();
 const faceStore = useFaceStore();
 const gradeStore = useGradeStore();
+const reviewStore = useReviewStore();
 
 const faceId = computed(() => String(route.params.id ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
@@ -97,6 +100,7 @@ async function submit() {
 onMounted(async () => {
   await faceStore.load();
   await gradeStore.load();
+  await reviewStore.load();
   if (face.value) {
     form.faceId = face.value.id;
     form.chainage = face.value.chainage;
@@ -108,12 +112,26 @@ onMounted(async () => {
   <div class="page">
     <div class="header">
       <h2>涌水记录与趋势 · {{ face?.faceNo ?? '未知' }}</h2>
+      <ReviewBadge
+        v-if="face"
+        :status="face.reviewStatus"
+        :version="face.confirmedVersion"
+        :comment="face.reviewComment"
+      />
       <el-tag type="info" effect="plain">记录 {{ rows.length }} 条</el-tag>
       <el-tag type="warning">突变点 {{ surges.length }} 处</el-tag>
       <div class="spacer" />
       <el-button @click="router.push(`/faces/${faceId}`)">返回掌子面详情</el-button>
       <el-button @click="router.push(`/faces/${faceId}/joints`)">节理录入</el-button>
     </div>
+
+    <el-alert
+      v-if="face?.reviewStatus === 'confirmed'"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="本循环已经总工确认；新增或删除涌水记录将使记录转回待复核，台账仍按上一版确认结论"
+    />
 
     <div class="grid">
       <el-card shadow="never">

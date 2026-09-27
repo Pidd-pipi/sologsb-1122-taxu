@@ -5,9 +5,11 @@ import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
 import { useJointStore } from '../stores/jointStore';
+import { useReviewStore } from '../stores/reviewStore';
 import { useFaceFilter } from '../hooks/useFaceFilter';
 import FaceCard from '../components/common/FaceCard.vue';
 import GradeTag from '../components/common/GradeTag.vue';
+import { REVIEW_STATUS_LABEL, type ReviewStatus } from '../types/review';
 import {
   EXCAVATION_METHODS,
   LITHOLOGIES,
@@ -23,6 +25,7 @@ const router = useRouter();
 const faceStore = useFaceStore();
 const gradeStore = useGradeStore();
 const jointStore = useJointStore();
+const reviewStore = useReviewStore();
 const { filters, result, options, gradeDistribution, reset } = useFaceFilter();
 
 const dialogVisible = ref(false);
@@ -98,6 +101,7 @@ onMounted(async () => {
   await faceStore.load();
   await gradeStore.load();
   await jointStore.load();
+  await reviewStore.load();
 });
 </script>
 
@@ -136,6 +140,17 @@ onMounted(async () => {
             <el-option v-for="m in EXCAVATION_METHODS" :key="m" :label="m" :value="m" />
           </el-select>
         </el-form-item>
+        <el-form-item label="校审状态">
+          <el-select v-model="filters.status" style="width: 130px">
+            <el-option label="全部" value="all" />
+            <el-option
+              v-for="s in ['pending', 'rejected', 'confirmed'] as ReviewStatus[]"
+              :key="s"
+              :label="REVIEW_STATUS_LABEL[s]"
+              :value="s"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="关键词">
           <el-input v-model="filters.keyword" placeholder="编号 / 地质员 / 岩性" clearable style="width: 180px" />
         </el-form-item>
@@ -146,7 +161,12 @@ onMounted(async () => {
     </el-card>
 
     <el-card shadow="never">
-      <template #header><strong>围岩级别分布</strong></template>
+      <template #header>
+        <div style="display: flex; align-items: center; gap: 10px">
+          <strong>围岩级别分布</strong>
+          <span style="color: #97a0ad; font-size: 12px">仅统计总工确认的台账生效级别，待复核记录不计入</span>
+        </div>
+      </template>
       <div class="dist">
         <div v-for="item in gradeDistribution" :key="item.grade" class="dist-row">
           <GradeTag :grade="item.grade" />

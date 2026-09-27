@@ -5,8 +5,10 @@ import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
 import { useJointStore } from '../stores/jointStore';
+import { useReviewStore } from '../stores/reviewStore';
 import { useGradeCalc } from '../hooks/useGradeCalc';
 import GradeTag from '../components/common/GradeTag.vue';
+import ReviewBadge from '../components/common/ReviewBadge.vue';
 import { GROUNDWATERS, GRADE_SUPPORT, ROCK_GRADES, type Groundwater, type RockGrade } from '../types/grade';
 import { attitudeText, estimateJv, formatChainage } from '../utils/geoMath';
 
@@ -15,6 +17,7 @@ const router = useRouter();
 const faceStore = useFaceStore();
 const gradeStore = useGradeStore();
 const jointStore = useJointStore();
+const reviewStore = useReviewStore();
 
 const faceId = computed(() => String(route.params.faceId ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
@@ -73,6 +76,7 @@ onMounted(async () => {
   await faceStore.load();
   await jointStore.load();
   await gradeStore.load();
+  await reviewStore.load();
   if (face.value) {
     patch({
       rockStrength: face.value.rockStrength,
@@ -86,6 +90,12 @@ onMounted(async () => {
   <div class="page">
     <div class="header">
       <h2>围岩级别判定 · {{ face?.faceNo ?? '未知' }}</h2>
+      <ReviewBadge
+        v-if="face"
+        :status="face.reviewStatus"
+        :version="face.confirmedVersion"
+        :comment="face.reviewComment"
+      />
       <GradeTag :grade="finalGrade" />
       <el-tag type="info" effect="plain">节理 {{ joints.length }} 组 · 自动 Jv {{ estimateJv(joints) }}</el-tag>
       <div class="spacer" />
@@ -144,6 +154,20 @@ onMounted(async () => {
             <el-radio-button v-for="g in ROCK_GRADES" :key="g" :value="g">{{ g }}</el-radio-button>
           </el-radio-group>
           <el-divider />
+          <el-alert
+            v-if="reviewStore.effectiveGrade(faceId)"
+            type="success"
+            :closable="false"
+            class="grade-note"
+            :title="`台账生效级别为 ${reviewStore.effectiveGrade(faceId)} 级（总工确认）；保存新判定后需重新确认才会更新台账结论`"
+          />
+          <el-alert
+            v-else
+            type="warning"
+            :closable="false"
+            class="grade-note"
+            title="本循环尚未经总工确认，保存判定后不会直接成为台账结论"
+          />
           <p class="muted">{{ compareText }}</p>
           <el-button type="primary" @click="save">保存判定结果</el-button>
         </el-card>
@@ -237,6 +261,9 @@ onMounted(async () => {
 .muted {
   color: #7b8592;
   font-size: 13px;
+}
+.grade-note {
+  margin-bottom: 10px;
 }
 .hint {
   margin-left: 8px;

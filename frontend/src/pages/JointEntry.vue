@@ -4,8 +4,10 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useJointStore } from '../stores/jointStore';
+import { useReviewStore } from '../stores/reviewStore';
 import JointPolarPlot from '../components/common/JointPolarPlot.vue';
 import SketchCanvas from '../components/common/SketchCanvas.vue';
+import ReviewBadge from '../components/common/ReviewBadge.vue';
 import {
   FILL_MATERIALS,
   ROUGHNESSES,
@@ -23,6 +25,7 @@ const route = useRoute();
 const router = useRouter();
 const faceStore = useFaceStore();
 const jointStore = useJointStore();
+const reviewStore = useReviewStore();
 
 const faceId = computed(() => String(route.params.id ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
@@ -103,6 +106,7 @@ async function mergeCluster(clusterNo: number) {
 onMounted(async () => {
   await faceStore.load();
   await jointStore.load();
+  await reviewStore.load();
 });
 </script>
 
@@ -110,11 +114,25 @@ onMounted(async () => {
   <div class="page">
     <div class="header">
       <h2>节理产状录入 · {{ face?.faceNo ?? '未知' }}</h2>
+      <ReviewBadge
+        v-if="face"
+        :status="face.reviewStatus"
+        :version="face.confirmedVersion"
+        :comment="face.reviewComment"
+      />
       <el-tag type="info" effect="plain">已录 {{ joints.length }} 组</el-tag>
       <div class="spacer" />
       <el-button @click="router.push(`/faces/${faceId}`)">返回掌子面详情</el-button>
       <el-button @click="router.push(`/grade/${faceId}`)">围岩级别判定</el-button>
     </div>
+
+    <el-alert
+      v-if="face?.reviewStatus === 'confirmed'"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="本循环已经总工确认；新增、删除或合并节理将使记录转回待复核，台账仍按上一版确认结论"
+    />
 
     <div class="grid">
       <el-card shadow="never">

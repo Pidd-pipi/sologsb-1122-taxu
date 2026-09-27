@@ -2,6 +2,7 @@
 import type { TunnelFace } from '../../types/face';
 import type { RockGrade } from '../../types/grade';
 import GradeTag from './GradeTag.vue';
+import ReviewBadge from './ReviewBadge.vue';
 import { formatChainage } from '../../utils/geoMath';
 
 defineProps<{
@@ -21,7 +22,14 @@ const emit = defineEmits<{
   <el-card class="face-card" shadow="hover" @click="emit('open', face.id)">
     <div class="row">
       <strong>{{ face.faceNo }}</strong>
-      <GradeTag :grade="grade" />
+      <ReviewBadge
+        :status="face.reviewStatus"
+        :version="face.confirmedVersion"
+        :comment="face.reviewComment"
+        size="small"
+      />
+      <GradeTag v-if="grade" :grade="grade" />
+      <el-tag v-else size="small" type="warning" effect="plain">台账未生效</el-tag>
       <el-tag size="small" effect="plain">{{ face.excavationMethod }}</el-tag>
     </div>
     <div class="line">

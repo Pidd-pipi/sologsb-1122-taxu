@@ -23,7 +23,14 @@ export const useFaceStore = defineStore('face', {
       this.loaded = true;
     },
     async add(draft: TunnelFaceDraft) {
-      const record: TunnelFace = { ...toPlain(draft), id: newId('face'), recordedAt: Date.now() };
+      const record: TunnelFace = {
+        ...toPlain(draft),
+        id: newId('face'),
+        recordedAt: Date.now(),
+        reviewStatus: 'pending',
+        confirmedVersion: 0,
+        pendingChanges: [],
+      };
       await db.faces.put(toPlain(record));
       this.items = [...this.items, record].sort((a, b) => b.chainage - a.chainage);
       return record;
@@ -32,6 +39,10 @@ export const useFaceStore = defineStore('face', {
       const plain = toPlain(patch);
       await db.faces.update(id, plain);
       this.items = this.items.map((it) => (it.id === id ? { ...it, ...plain } : it));
+    },
+    /** 供 reviewStore 在校审动作后同步 faces 内存，避免整表重载 */
+    applyReviewPatch(id: string, patch: Partial<TunnelFace>) {
+      this.items = this.items.map((it) => (it.id === id ? { ...it, ...patch } : it));
     },
     async remove(id: string) {
       await db.faces.delete(id);

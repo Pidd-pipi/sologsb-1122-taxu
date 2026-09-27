@@ -3,10 +3,11 @@ import type { TunnelFace } from '../types/face';
 import type { JointSet } from '../types/joint';
 import type { RockMassGrade } from '../types/grade';
 import type { WaterInflow } from '../types/water';
+import type { ReviewRecord } from '../types/review';
 import { newId } from './id';
 
 export const DB_NAME = 'gbtunnelface';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const LS_VERSION_KEY = 'gbtunnelface:db-version';
 
 class TunnelFaceDB extends Dexie {
@@ -14,6 +15,7 @@ class TunnelFaceDB extends Dexie {
   joints!: Table<JointSet, string>;
   grades!: Table<RockMassGrade, string>;
   waters!: Table<WaterInflow, string>;
+  reviews!: Table<ReviewRecord, string>;
 
   constructor() {
     super(DB_NAME);
@@ -50,6 +52,26 @@ class TunnelFaceDB extends Dexie {
           .toCollection()
           .modify((row: any) => {
             if (row.chainage === undefined) row.chainage = 0;
+          });
+      });
+    // v3：新增单循环校审。faces 增加校审字段索引，新增 reviews 表保存每次确认/退回的整份快照
+    this.version(3)
+      .stores({
+        faces: 'id, faceNo, chainage, lithology, excavationMethod, weathering, recordedAt, reviewStatus',
+        joints: 'id, faceId, setNo, dipDirection, dipAngle, fillMaterial',
+        grades: 'id, faceId, grade, judgedAt, bqValue',
+        waters: 'id, faceId, chainage, type, changeTrend',
+        reviews: 'id, faceId, action, actedAt',
+      })
+      .upgrade(async (tx) => {
+        // 既有编录在引入校审流程时一律回到待复核，需重新走总工确认
+        await tx
+          .table('faces')
+          .toCollection()
+          .modify((row: any) => {
+            if (!row.reviewStatus) row.reviewStatus = 'pending';
+            if (row.confirmedVersion === undefined) row.confirmedVersion = 0;
+            if (!Array.isArray(row.pendingChanges)) row.pendingChanges = [];
           });
       });
   }
@@ -108,6 +130,11 @@ export async function ensureSeedData(): Promise<void> {
       attitude: { strike: 42, dipDirection: 132, dipAngle: 34 },
       recordedAt: now - 2 * day,
       geologist: '岑柏川',
+      reviewStatus: 'confirmed',
+      confirmedVersion: 1,
+      reviewer: '童叙功',
+      reviewedAt: now - 2 * day + 3 * hour,
+      pendingChanges: [],
     },
     {
       id: face2,
@@ -122,6 +149,9 @@ export async function ensureSeedData(): Promise<void> {
       attitude: { strike: 48, dipDirection: 138, dipAngle: 28 },
       recordedAt: now - 6 * hour,
       geologist: '岑柏川',
+      reviewStatus: 'pending',
+      confirmedVersion: 0,
+      pendingChanges: [],
     },
   ];
 
@@ -242,10 +272,35 @@ export async function ensureSeedData(): Promise<void> {
     },
   ];
 
-  await db.transaction('rw', db.faces, db.joints, db.grades, db.waters, async () => {
+  // ZK-102 的总工确认快照：快照内容与当时整份编录一致（ZK-103 的 1 组节理不属于该循环）
+  const face1Joints = joints.filter((j) => j.faceId === face1);
+  const face1Grades = grades.filter((g) => g.faceId === face1);
+  const face1Waters = waters.filter((w) => w.faceId === face1);
+  const confirmedFace1 = faces.find((f) => f.id === face1)!;
+  const reviews: ReviewRecord[] = [
+    {
+      id: newId('review'),
+      faceId: face1,
+      action: 'confirm',
+      reviewer: '童叙功',
+      comment: '',
+      actedAt: now - 2 * day + 3 * hour,
+      seq: 1,
+      version: 1,
+      bundle: {
+        face: JSON.parse(JSON.stringify(confirmedFace1)),
+        joints: JSON.parse(JSON.stringify(face1Joints)),
+        grades: JSON.parse(JSON.stringify(face1Grades)),
+        waters: JSON.parse(JSON.stringify(face1Waters)),
+      },
+    },
+  ];
+
+  await db.transaction('rw', db.faces, db.joints, db.grades, db.waters, db.reviews, async () => {
     await db.faces.bulkPut(faces);
     await db.joints.bulkPut(joints);
     await db.grades.bulkPut(grades);
     await db.waters.bulkPut(waters);
+    await db.reviews.bulkPut(reviews);
   });
 }

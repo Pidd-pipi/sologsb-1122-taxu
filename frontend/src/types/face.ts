@@ -1,3 +1,5 @@
+import type { PendingChange, ReviewStatus } from './review';
+
 /** 开挖方法 */
 export type ExcavationMethod = '全断面' | '台阶法' | 'CD 法';
 
@@ -39,6 +41,28 @@ export interface TunnelFace {
   attitude: Attitude;
   recordedAt: number;
   geologist: string;
+  /** 单循环校审状态：新记录默认待复核 */
+  reviewStatus: ReviewStatus;
+  /** 已确认版本号（第几次经总工确认），未确认过为 0 */
+  confirmedVersion: number;
+  /** 最近一次校审的总工姓名 */
+  reviewer?: string;
+  /** 最近一次退回意见 */
+  reviewComment?: string;
+  /** 最近一次校审时间 */
+  reviewedAt?: number;
+  /** 上次确认（或退回）后发生、尚未再确认的改动清单 */
+  pendingChanges: PendingChange[];
 }
 
-export type TunnelFaceDraft = Omit<TunnelFace, 'id' | 'recordedAt'>;
+export type TunnelFaceDraft = Omit<
+  TunnelFace,
+  | 'id'
+  | 'recordedAt'
+  | 'reviewStatus'
+  | 'confirmedVersion'
+  | 'reviewer'
+  | 'reviewComment'
+  | 'reviewedAt'
+  | 'pendingChanges'
+>;
