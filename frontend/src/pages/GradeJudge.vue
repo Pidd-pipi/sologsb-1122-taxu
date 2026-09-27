@@ -5,8 +5,10 @@ import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
 import { useJointStore } from '../stores/jointStore';
+import { useReviewStore } from '../stores/reviewStore';
 import { useGradeCalc } from '../hooks/useGradeCalc';
 import GradeTag from '../components/common/GradeTag.vue';
+import ReviewStatusTag from '../components/common/ReviewStatusTag.vue';
 import { GROUNDWATERS, GRADE_SUPPORT, ROCK_GRADES, type Groundwater, type RockGrade } from '../types/grade';
 import { attitudeText, estimateJv, formatChainage } from '../utils/geoMath';
 
@@ -15,12 +17,14 @@ const router = useRouter();
 const faceStore = useFaceStore();
 const gradeStore = useGradeStore();
 const jointStore = useJointStore();
+const reviewStore = useReviewStore();
 
 const faceId = computed(() => String(route.params.faceId ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
 const joints = computed(() => jointStore.byFace(faceId.value));
 const history = computed(() => gradeStore.byFace(faceId.value));
 const previous = computed(() => history.value[0]);
+const reviewStatus = computed(() => reviewStore.statusByFace(faceId.value));
 
 const { input, result, patch } = useGradeCalc(() => joints.value);
 const manual = ref(false);
@@ -52,6 +56,7 @@ async function save() {
     ElMessage.error('未找到该掌子面');
     return;
   }
+  const wasConfirmed = reviewStatus.value === 'confirmed';
   await gradeStore.addGrade({
     faceId: face.value.id,
     grade: finalGrade.value,
@@ -66,13 +71,20 @@ async function save() {
     supportSuggestion: finalSupport.value,
     manualAdjusted: manual.value,
   });
-  ElMessage.success(`已保存 ${finalGrade.value} 级围岩判定`);
+  // 围岩判定改动：已确认记录自动转回待复核，上一版快照留档
+  await reviewStore.touchFace(face.value.id);
+  ElMessage.success(
+    wasConfirmed
+      ? `已保存 ${finalGrade.value} 级围岩判定，记录已转回待复核`
+      : `已保存 ${finalGrade.value} 级围岩判定`,
+  );
 }
 
 onMounted(async () => {
   await faceStore.load();
   await jointStore.load();
   await gradeStore.load();
+  await reviewStore.load();
   if (face.value) {
     patch({
       rockStrength: face.value.rockStrength,
@@ -88,12 +100,20 @@ onMounted(async () => {
       <h2>围岩级别判定 · {{ face?.faceNo ?? '未知' }}</h2>
       <GradeTag :grade="finalGrade" />
       <el-tag type="info" effect="plain">节理 {{ joints.length }} 组 · 自动 Jv {{ estimateJv(joints) }}</el-tag>
+      <ReviewStatusTag v-if="face" :status="reviewStatus" />
       <div class="spacer" />
       <el-button @click="router.push(`/faces/${faceId}`)">返回掌子面详情</el-button>
       <el-button @click="router.push(`/faces/${faceId}/joints`)">节理录入</el-button>
     </div>
 
     <el-alert v-if="!face" type="warning" :closable="false" show-icon title="未找到该掌子面" />
+    <el-alert
+      v-else-if="reviewStatus === 'confirmed'"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="当前记录已由总工确认，保存新判定后将自动转回待复核，上一版快照保留在校审历史中"
+    />
 
     <div class="grid">
       <el-card shadow="never">

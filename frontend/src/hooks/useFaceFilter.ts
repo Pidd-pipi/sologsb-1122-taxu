@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
+import { useReviewStore } from '../stores/reviewStore';
 import type { TunnelFace } from '../types/face';
 import type { RockGrade } from '../types/grade';
 
@@ -35,7 +36,18 @@ export const DEFAULT_FACE_FILTERS: FaceFilters = {
 export function useFaceFilter(initial?: Partial<FaceFilters>) {
   const faceStore = useFaceStore();
   const gradeStore = useGradeStore();
+  const reviewStore = useReviewStore();
   const filters = ref<FaceFilters>({ ...DEFAULT_FACE_FILTERS, ...initial });
+
+  /**
+   * 台账结论级别：已确认过的掌子面以最近一轮确认快照为准，
+   * 确认后的改动在再次确认前不影响台账；从未确认的取实时判定。
+   */
+  function ledgerGrade(faceId: string): RockGrade | undefined {
+    const confirmed = reviewStore.latestConfirmedByFace(faceId);
+    if (confirmed) return confirmed.snapshot.grade?.grade;
+    return gradeStore.latestByFace(faceId)?.grade;
+  }
 
   const options = computed(() => ({
     lithologies: Array.from(new Set(faceStore.items.map((it) => it.lithology))).filter(Boolean),
@@ -51,7 +63,7 @@ export function useFaceFilter(initial?: Partial<FaceFilters>) {
         if (face.chainage < f.chainageFrom || face.chainage > f.chainageTo) return false;
         if (f.lithology !== 'all' && face.lithology !== f.lithology) return false;
         if (f.method !== 'all' && face.excavationMethod !== f.method) return false;
-        const grade = gradeStore.latestByFace(face.id)?.grade;
+        const grade = ledgerGrade(face.id);
         if (f.grade !== 'all' && grade !== f.grade) return false;
         if (kw) {
           const hit =
@@ -64,7 +76,7 @@ export function useFaceFilter(initial?: Partial<FaceFilters>) {
       })
       .map((face) => ({
         face,
-        grade: gradeStore.latestByFace(face.id)?.grade,
+        grade: ledgerGrade(face.id),
         lastRecordedAt: face.recordedAt,
       }));
     rows.sort((a, b) => b.face.chainage - a.face.chainage);
@@ -83,5 +95,5 @@ export function useFaceFilter(initial?: Partial<FaceFilters>) {
     filters.value = { ...DEFAULT_FACE_FILTERS };
   }
 
-  return { filters, result, options, gradeDistribution, reset, faceStore, gradeStore };
+  return { filters, result, options, gradeDistribution, reset, faceStore, gradeStore, reviewStore };
 }

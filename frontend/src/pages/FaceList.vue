@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
 import { useJointStore } from '../stores/jointStore';
+import { useReviewStore } from '../stores/reviewStore';
 import { useFaceFilter } from '../hooks/useFaceFilter';
 import FaceCard from '../components/common/FaceCard.vue';
 import GradeTag from '../components/common/GradeTag.vue';
@@ -23,10 +24,19 @@ const router = useRouter();
 const faceStore = useFaceStore();
 const gradeStore = useGradeStore();
 const jointStore = useJointStore();
+const reviewStore = useReviewStore();
 const { filters, result, options, gradeDistribution, reset } = useFaceFilter();
 
 const dialogVisible = ref(false);
 const error = ref('');
+
+/** 台账校审状态统计（待复核条数用于提醒总工） */
+const pendingCount = computed(
+  () => faceStore.items.filter((it) => reviewStore.statusByFace(it.id) === 'pending').length,
+);
+const rejectedCount = computed(
+  () => faceStore.items.filter((it) => reviewStore.statusByFace(it.id) === 'rejected').length,
+);
 
 const form = reactive<TunnelFaceDraft>({
   faceNo: '',
@@ -89,8 +99,10 @@ async function submit() {
     return;
   }
   const created = await faceStore.add({ ...form, faceNo: form.faceNo.trim() });
+  // 新记录建立第 1 轮校审，状态为待复核
+  await reviewStore.touchFace(created.id);
   dialogVisible.value = false;
-  ElMessage.success(`已建立掌子面「${created.faceNo}」`);
+  ElMessage.success(`已建立掌子面「${created.faceNo}」，待总工复核`);
   form.faceNo = '';
 }
 
@@ -98,6 +110,7 @@ onMounted(async () => {
   await faceStore.load();
   await gradeStore.load();
   await jointStore.load();
+  await reviewStore.load();
 });
 </script>
 
@@ -107,6 +120,8 @@ onMounted(async () => {
       <h2>掌子面台账</h2>
       <el-tag>共 {{ faceStore.items.length }} 个掌子面</el-tag>
       <el-tag type="info" effect="plain">筛选命中 {{ result.length }} 个</el-tag>
+      <el-tag v-if="pendingCount > 0" type="warning">待复核 {{ pendingCount }}</el-tag>
+      <el-tag v-if="rejectedCount > 0" type="danger">已退回 {{ rejectedCount }}</el-tag>
       <div class="spacer" />
       <el-button type="primary" @click="openDialog">新建编录</el-button>
     </div>
@@ -169,6 +184,8 @@ onMounted(async () => {
         :grade="row.grade"
         :joint-count="jointStore.byFace(row.face.id).length"
         :water-count="gradeStore.watersByFace(row.face.id).length"
+        :review-status="reviewStore.statusByFace(row.face.id)"
+        :review-round="reviewStore.latestByFace(row.face.id)?.round"
         :footer="`编录时间 ${new Date(row.lastRecordedAt).toLocaleString('zh-CN')}`"
         @open="(id) => router.push(`/faces/${id}`)"
       />

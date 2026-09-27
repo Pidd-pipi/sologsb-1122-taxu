@@ -4,8 +4,10 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useJointStore } from '../stores/jointStore';
+import { useReviewStore } from '../stores/reviewStore';
 import JointPolarPlot from '../components/common/JointPolarPlot.vue';
 import SketchCanvas from '../components/common/SketchCanvas.vue';
+import ReviewStatusTag from '../components/common/ReviewStatusTag.vue';
 import {
   FILL_MATERIALS,
   ROUGHNESSES,
@@ -23,11 +25,13 @@ const route = useRoute();
 const router = useRouter();
 const faceStore = useFaceStore();
 const jointStore = useJointStore();
+const reviewStore = useReviewStore();
 
 const faceId = computed(() => String(route.params.id ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
 const joints = computed(() => jointStore.byFace(faceId.value));
 const clusters = computed(() => clusterJoints(joints.value));
+const reviewStatus = computed(() => reviewStore.statusByFace(faceId.value));
 
 const error = ref('');
 const mergeTarget = ref('');
@@ -82,6 +86,8 @@ async function submit() {
     return;
   }
   const created = await jointStore.add({ ...form });
+  // 节理改动：已确认记录自动转回待复核
+  await reviewStore.touchFace(form.faceId);
   ElMessage.success(`已录入 J${created.setNo}：${attitudeText(created.dipDirection, created.dipAngle)}`);
   form.setNo = nextSetNo(joints.value.map((j) => j.setNo));
   form.jointCount = 5;
@@ -97,12 +103,20 @@ async function mergeCluster(clusterNo: number) {
   const sourceIds = joints.value.filter((j) => cluster.members.includes(`J${j.setNo}`) && j.id !== target?.id).map((j) => j.id);
   if (!target) return;
   await jointStore.mergeInto(target.id, sourceIds);
+  await reviewStore.touchFace(faceId.value);
   ElMessage.success(`已把 ${cluster.members.slice(1).join('、')} 合并入 J${target.setNo}`);
+}
+
+async function removeJoint(id: string) {
+  await jointStore.remove(id);
+  await reviewStore.touchFace(faceId.value);
+  ElMessage.success('已删除节理组');
 }
 
 onMounted(async () => {
   await faceStore.load();
   await jointStore.load();
+  await reviewStore.load();
 });
 </script>
 
@@ -111,10 +125,19 @@ onMounted(async () => {
     <div class="header">
       <h2>节理产状录入 · {{ face?.faceNo ?? '未知' }}</h2>
       <el-tag type="info" effect="plain">已录 {{ joints.length }} 组</el-tag>
+      <ReviewStatusTag v-if="face" :status="reviewStatus" />
       <div class="spacer" />
       <el-button @click="router.push(`/faces/${faceId}`)">返回掌子面详情</el-button>
       <el-button @click="router.push(`/grade/${faceId}`)">围岩级别判定</el-button>
     </div>
+
+    <el-alert
+      v-if="face && reviewStatus === 'confirmed'"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="当前记录已由总工确认，节理增删合并后将自动转回待复核，上一版快照保留在校审历史中"
+    />
 
     <div class="grid">
       <el-card shadow="never">
@@ -218,7 +241,7 @@ onMounted(async () => {
             <el-table-column prop="jointCount" label="条数" width="80" />
             <el-table-column label="操作" width="90">
               <template #default="{ row }">
-                <el-button size="small" danger @click="jointStore.remove(row.id)">删除</el-button>
+                <el-button size="small" danger @click="removeJoint(row.id)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>

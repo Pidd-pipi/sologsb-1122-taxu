@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { TunnelFace } from '../../types/face';
 import type { RockGrade } from '../../types/grade';
+import type { ReviewStatus } from '../../types/review';
 import GradeTag from './GradeTag.vue';
+import ReviewStatusTag from './ReviewStatusTag.vue';
 import { formatChainage } from '../../utils/geoMath';
 
 defineProps<{
@@ -10,6 +12,8 @@ defineProps<{
   jointCount?: number;
   waterCount?: number;
   footer?: string;
+  reviewStatus?: ReviewStatus;
+  reviewRound?: number;
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +27,7 @@ const emit = defineEmits<{
       <strong>{{ face.faceNo }}</strong>
       <GradeTag :grade="grade" />
       <el-tag size="small" effect="plain">{{ face.excavationMethod }}</el-tag>
+      <ReviewStatusTag v-if="reviewStatus" :status="reviewStatus" :round="reviewRound" />
     </div>
     <div class="line">
       桩号 {{ formatChainage(face.chainage) }} · 编录区间
@@ -49,6 +54,7 @@ const emit = defineEmits<{
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 .line {
   font-size: 13px;

@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
+import { useReviewStore } from '../stores/reviewStore';
+import ReviewStatusTag from '../components/common/ReviewStatusTag.vue';
 import { CHANGE_TRENDS, INFLOW_TYPES, isSurge, type ChangeTrend, type InflowType, type WaterInflow, type WaterInflowDraft } from '../types/water';
 import { waterMeasure } from '../types/grade';
 import { formatChainage, parseChainage } from '../utils/geoMath';
@@ -12,10 +14,12 @@ const route = useRoute();
 const router = useRouter();
 const faceStore = useFaceStore();
 const gradeStore = useGradeStore();
+const reviewStore = useReviewStore();
 
 const faceId = computed(() => String(route.params.id ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
 const rows = computed(() => gradeStore.watersByFace(faceId.value));
+const reviewStatus = computed(() => reviewStore.statusByFace(faceId.value));
 
 const error = ref('');
 
@@ -90,13 +94,22 @@ async function submit() {
     return;
   }
   const created = await gradeStore.addWater({ ...form, position: form.position.trim() });
+  // 涌水改动：已确认记录自动转回待复核
+  await reviewStore.touchFace(form.faceId);
   ElMessage.success(`已记录 ${created.position}：${created.type} ${created.estimatedFlow} L/min`);
   form.position = '';
+}
+
+async function removeWater(id: string) {
+  await gradeStore.removeWater(id);
+  await reviewStore.touchFace(faceId.value);
+  ElMessage.success('已删除涌水记录');
 }
 
 onMounted(async () => {
   await faceStore.load();
   await gradeStore.load();
+  await reviewStore.load();
   if (face.value) {
     form.faceId = face.value.id;
     form.chainage = face.value.chainage;
@@ -110,10 +123,19 @@ onMounted(async () => {
       <h2>涌水记录与趋势 · {{ face?.faceNo ?? '未知' }}</h2>
       <el-tag type="info" effect="plain">记录 {{ rows.length }} 条</el-tag>
       <el-tag type="warning">突变点 {{ surges.length }} 处</el-tag>
+      <ReviewStatusTag v-if="face" :status="reviewStatus" />
       <div class="spacer" />
       <el-button @click="router.push(`/faces/${faceId}`)">返回掌子面详情</el-button>
       <el-button @click="router.push(`/faces/${faceId}/joints`)">节理录入</el-button>
     </div>
+
+    <el-alert
+      v-if="face && reviewStatus === 'confirmed'"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="当前记录已由总工确认，涌水记录增删后将自动转回待复核，上一版快照保留在校审历史中"
+    />
 
     <div class="grid">
       <el-card shadow="never">
@@ -217,7 +239,7 @@ onMounted(async () => {
             <el-table-column prop="changeTrend" label="趋势" width="90" />
             <el-table-column label="操作" width="90">
               <template #default="{ row }">
-                <el-button size="small" danger @click="gradeStore.removeWater(row.id)">删除</el-button>
+                <el-button size="small" danger @click="removeWater(row.id)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>

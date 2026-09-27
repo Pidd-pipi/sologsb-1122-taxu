@@ -3,10 +3,11 @@ import type { TunnelFace } from '../types/face';
 import type { JointSet } from '../types/joint';
 import type { RockMassGrade } from '../types/grade';
 import type { WaterInflow } from '../types/water';
+import type { ReviewRecord } from '../types/review';
 import { newId } from './id';
 
 export const DB_NAME = 'gbtunnelface';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const LS_VERSION_KEY = 'gbtunnelface:db-version';
 
 class TunnelFaceDB extends Dexie {
@@ -14,6 +15,7 @@ class TunnelFaceDB extends Dexie {
   joints!: Table<JointSet, string>;
   grades!: Table<RockMassGrade, string>;
   waters!: Table<WaterInflow, string>;
+  reviews!: Table<ReviewRecord, string>;
 
   constructor() {
     super(DB_NAME);
@@ -52,6 +54,10 @@ class TunnelFaceDB extends Dexie {
             if (row.chainage === undefined) row.chainage = 0;
           });
       });
+    // v3：新增单循环校审表。历史掌子面没有校审记录，按「待复核」处理，首次复核时落快照。
+    this.version(3).stores({
+      reviews: 'id, faceId, status, submittedAt',
+    });
   }
 }
 
@@ -242,10 +248,45 @@ export async function ensureSeedData(): Promise<void> {
     },
   ];
 
-  await db.transaction('rw', db.faces, db.joints, db.grades, db.waters, async () => {
+  const reviews: ReviewRecord[] = [
+    {
+      id: newId('review'),
+      faceId: face1,
+      round: 1,
+      status: 'confirmed',
+      snapshot: {
+        face: faces[0],
+        joints: joints.filter((j) => j.faceId === face1),
+        waters: waters.filter((w) => w.faceId === face1),
+        grade: grades.find((g) => g.faceId === face1),
+      },
+      submittedAt: now - 2 * day,
+      submittedBy: '岑柏川',
+      reviewedAt: now - 2 * day + 2 * hour,
+      reviewer: '林正',
+      reviewComment: '编录齐全，判定依据充分，同意按 Ⅲ 级支护。',
+    },
+    {
+      id: newId('review'),
+      faceId: face2,
+      round: 1,
+      status: 'pending',
+      snapshot: {
+        face: faces[1],
+        joints: joints.filter((j) => j.faceId === face2),
+        waters: [],
+        grade: undefined,
+      },
+      submittedAt: now - 6 * hour,
+      submittedBy: '岑柏川',
+    },
+  ];
+
+  await db.transaction('rw', db.faces, db.joints, db.grades, db.waters, db.reviews, async () => {
     await db.faces.bulkPut(faces);
     await db.joints.bulkPut(joints);
     await db.grades.bulkPut(grades);
     await db.waters.bulkPut(waters);
+    await db.reviews.bulkPut(reviews);
   });
 }
